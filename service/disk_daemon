@@ -1,0 +1,9 @@
+#!/sbin/openrc-run
+
+name="disk_daemon"
+description="silly daemon for monitoring disks"
+
+command="/usr/bin/disk_daemon"
+
+pidfile="/var/run/disk_daemon.pid"
+command_background=true
