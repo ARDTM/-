@@ -1,0 +1,13 @@
+[Unit]
+Description="silly daemon for monitoring disks"
+
+[Service]
+ExecStart=/usr/bin/disk_daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+
+Type=simple
+StandardOutput=journal
+StandardError=journal
