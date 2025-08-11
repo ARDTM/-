@@ -12,15 +12,21 @@
 
 void stop(int signo){
 	unlink("/var/run/disk_daemon.pid");
+	syslog(LOG_INFO, "disk daemon stopped");
 	exit(0);
 }
 
-void make_pid(){
+int make_pid(){
 	int fd = open("/var/run/disk_daemon.pid", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if(fd < 0){
+		syslog(LOG_ERR, "failed create daemon pid");
+		return(1);
+	}
 	char pid[8] = {0};
 	snprintf(pid, sizeof(pid), "%d", getpid());
 	write(fd, pid, sizeof(pid));
 	close(fd);
+	return(0);
 }
 
 void daemonize(void){
@@ -46,6 +52,7 @@ void daemonize(void){
 	close(STDOUT_FILENO);
 	close(STDERR_FILENO);
 
+
 }
 
 void parse_model(int dest_fd, int src_fd);
@@ -67,27 +74,54 @@ void parse_sys(char *name){
 	snprintf(dest_file, sizeof(dest_file), "/tmp/ddaemon/%s_info", name);
 	dest_fd = open(dest_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);	
 
+	if(dest_fd < 0){
+		syslog(LOG_ERR, "failed to create/open %s", name);
+		goto p_s_end;
+	}
+
 	chdir(path);
+		
+	int model_fd = open("device/model", O_RDONLY);
+	if(model_fd < 0){
+		syslog(LOG_ERR, "failed ot open %s/device/model", name);
+	}else{
+		parse_model(dest_fd, model_fd);
+	}
 	
-	int stat_fd = open("stat", O_RDONLY );
-	int size_fd = open("size", O_RDONLY);
+	int vendor_fd = open("device/vendor", O_RDONLY);
+	if(vendor_fd < 0){
+		syslog(LOG_ERR, "failed to open %s/device/vendor", name);
+	}else{
+		parse_vendor(dest_fd, vendor_fd);
+	}
+
+        int size_fd = open("size", O_RDONLY);
+        if(size_fd < 0){
+                syslog(LOG_ERR, "failed to open %s/size", name);
+        }else{
+                parse_size(dest_fd, size_fd);
+        }
+
 	int lb_size_fd = open("queue/logical_block_size", O_RDONLY);
-	int removable_fd = open("removable", O_RDONLY);
+	if(lb_size_fd < 0){
+		syslog(LOG_ERR, "failed to open %s/queue/logical_block_size", name);
+	}else{
+		parse_lb_size(dest_fd, lb_size_fd);
+	}
 
-	strcat(path, "device/");
-	chdir(path);
-	
-	int model_fd = open("model", O_RDONLY);
-	int vendor_fd = open("vendor", O_RDONLY);
+        int removable_fd = open("removable", O_RDONLY);
+	if(removable_fd < 0){
+		syslog(LOG_ERR, "failed to open %s/removable", name);
+	}else{
+		parse_removable(dest_fd, removable_fd);
+	}
 
-	parse_model(dest_fd, model_fd);	
-	parse_vendor(dest_fd, vendor_fd);
-	parse_size(dest_fd, size_fd);
-	parse_lb_size(dest_fd, lb_size_fd);
-	parse_removable(dest_fd, removable_fd);
-	parse_stat(dest_fd, stat_fd);
-
-	write(dest_fd, "\n", 2);
+	int stat_fd = open("stat", O_RDONLY );
+	if(stat_fd < 0){
+		syslog(LOG_ERR, "failed to open %s/stat", name);
+	}else{
+		parse_stat(dest_fd, stat_fd);
+	}
 
 	close(dest_fd);
 	close(stat_fd);
@@ -96,12 +130,19 @@ void parse_sys(char *name){
 	close(removable_fd);
 	close(model_fd);	
 	close(vendor_fd);
+p_s_end:
+
 }
 
 int main(void){
 	daemonize();
+
+        openlog("DISK_DAEMON", LOG_CONS | LOG_PID, LOG_DAEMON);
 	
-	make_pid();
+	if(make_pid())
+		goto END;
+		
+        syslog(LOG_INFO, "disk daemon started");
 
 	signal(SIGTERM, stop);
 	signal(SIGINT, stop);
@@ -120,6 +161,11 @@ int main(void){
 		}
 	sleep(3);
 	}
+
+END:
+       syslog(LOG_ERR, "STOP DAEMON");
+       return(1);
+
 }
 
 void parse_stat(int dest_fd, int src_fd){\
@@ -173,5 +219,4 @@ void parse_removable(int dest_fd, int src_fd){
 	write(dest_fd, "5: ", 3);
         write(dest_fd, buf, strlen(buf));
 }
-
 
